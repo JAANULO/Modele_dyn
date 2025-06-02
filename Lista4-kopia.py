@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
 import pandas as pd
 import sympy as sp
+import math
 
 
 # === Równania ruchu ===
@@ -38,15 +39,22 @@ def symbolic_r_theta(h_val, G_val, M_val, e_val):
 def plot_theta_trajectories_by_group(params_phys, num_points=500):
     results_phys = []
 
-    for i in range(0, len(params_phys), 3):
-        group = params_phys[i:i+3]
-        fig1, axs1 = plt.subplots(1, 3, figsize=(18, 5), sharey=True)
-        fig2, axs2 = plt.subplots(1, 3, figsize=(18, 4))
+    # Podział: 2 fizyczne + 4 zmodyfikowane
+    groups = [params_phys[:2], params_phys[2:]]
+    titles = [" "," "]
 
-        axs1 = axs1 if isinstance(axs1, np.ndarray) else [axs1]
-        axs2 = axs2 if isinstance(axs2, np.ndarray) else [axs2]
+    for group_idx, group in enumerate(groups):
+        n = len(group)
+        n_rows = int(math.floor(math.sqrt(n)))
+        n_cols = int(math.ceil(n / n_rows))
 
-        for idx, (ax_r, ax_err, (G, M, y0, t_span, label)) in enumerate(zip(axs1, axs2, group)):
+        fig_r, axs_r = plt.subplots(n_rows, n_cols, figsize=(6 * n_cols, 4.5 * n_rows))
+        fig_err, axs_err = plt.subplots(n_rows, n_cols, figsize=(6 * n_cols, 4 * n_rows))
+
+        axs_r = np.array(axs_r).reshape(-1)
+        axs_err = np.array(axs_err).reshape(-1)
+
+        for idx, ((G, M, y0, t_span, label), ax_r, ax_err) in enumerate(zip(group, axs_r, axs_err)):
             k = G * M
             h = compute_h(*y0)
             e = compute_e(*y0, G, M)
@@ -64,39 +72,36 @@ def plot_theta_trajectories_by_group(params_phys, num_points=500):
             theta_sorted = theta_numeric[sort_idx]
             r_sorted_numeric = r_numeric[sort_idx]
 
-            # Dokładne rozwiązanie analityczne
             r_exact_expr = symbolic_r_theta(h, G, M, e)
             r_exact_func = sp.lambdify(sp.symbols('theta'), r_exact_expr, modules=['numpy'])
             r_sorted_exact = r_exact_func(theta_sorted)
 
-            # Oblicz błędy
             abs_error = np.abs(r_sorted_numeric - r_sorted_exact)
             sq_error = (r_sorted_numeric - r_sorted_exact)**2
             mae = np.mean(abs_error)
             mse = np.mean(sq_error)
             results_phys.append((label, mae, mse))
 
-            # === WYKRES: r(θ) ===
+            # === r(θ): Numeryczne (czarny), Dokładne (czerwony przerywany)
             ax_r.plot(theta_sorted, r_sorted_numeric, label="Numeryczne", color='black')
             ax_r.plot(theta_sorted, r_sorted_exact, 'r--', label="Dokładne (SymPy)")
             ax_r.set_title(label)
             ax_r.set_xlabel("θ [rad]")
+            ax_r.set_ylabel("r [m]")
             ax_r.grid(True)
-            if idx == 0:
-                ax_r.set_ylabel("r [m]")
 
-            # === WYKRES: Błąd bezwzględny ===
-            ax_err.plot(theta_sorted, abs_error, label="Błąd bezwzględny")
+            # === Błąd: kolor niebieski
+            #ax_err.plot(theta_sorted, abs_error, label="Błąd bezwzględny", color='blue')
+            default_color = plt.rcParams['axes.prop_cycle'].by_key()['color'][0]
+            ax_err.plot(theta_sorted, abs_error, label="Błąd bezwzględny", color=default_color)
             ax_err.set_title(f"Błąd r(θ) – {label}")
             ax_err.set_xlabel("θ [rad]")
-            if idx == 0:
-                ax_err.set_ylabel("Błąd [m]")
+            ax_err.set_ylabel("Błąd [m]")
             ax_err.grid(True)
 
-        handles, labels = axs1[0].get_legend_handles_labels()
-        fig1.legend(handles, labels, loc='upper center', ncol=2)
-        fig1.suptitle("Porównanie r(θ): Numeryczne vs Dokładne", fontsize=14)
-        fig2.suptitle("Błąd bezwzględny r(θ)", fontsize=14)
+        fig_r.suptitle("Porównanie r(θ): Numeryczne vs Dokładne", fontsize=14)
+        fig_err.suptitle(titles[group_idx], fontsize=14)
+
         plt.tight_layout(rect=[0, 0, 1, 0.94])
         plt.show()
 
