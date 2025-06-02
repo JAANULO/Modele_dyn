@@ -1,11 +1,13 @@
+#lista4
+
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
-from mpl_toolkits.mplot3d import Axes3D
 import pandas as pd
 import sympy as sp
 
-# === Równania ruchu (grawitacja centralna) ===
+
+# === Równania ruchu ===
 def orbital_rhs(t, y, k):
     x, vx, y_, vy = y
     r = np.sqrt(x**2 + y_**2)
@@ -13,11 +15,9 @@ def orbital_rhs(t, y, k):
     ay = -k * y_ / r**3
     return [vx, ax, vy, ay]
 
-# === Moment pędu ===
 def compute_h(x0, vx0, y0, vy0):
     return x0 * vy0 - y0 * vx0
 
-# === Ekscentryczność ===
 def compute_e(x0, vx0, y0, vy0, G, M):
     r0 = np.sqrt(x0**2 + y0**2)
     v0 = np.sqrt(vx0**2 + vy0**2)
@@ -26,8 +26,7 @@ def compute_e(x0, vx0, y0, vy0, G, M):
     e = np.sqrt(1 + (2 * (0.5 * v0**2 - mu / r0) * h**2) / mu**2)
     return e
 
-
-# === Symboliczny wzór na r(θ) z SymPy ===
+# === Symboliczne rozwiązanie r(θ) z sympy ===
 def symbolic_r_theta(h_val, G_val, M_val, e_val):
     theta = sp.symbols('theta')
     mu = G_val * M_val
@@ -35,19 +34,19 @@ def symbolic_r_theta(h_val, G_val, M_val, e_val):
     r_exact_expr = p / (1 + e_val * sp.cos(theta))
     return r_exact_expr
 
-# === Wykresy r(θ), błędów i r(t) z oznaczeniem SymPy ===
-def plot_theta_and_error_by_group(params_phys, num_points=500):
+# === Główna funkcja do rysowania r(θ) ===
+def plot_theta_trajectories_by_group(params_phys, num_points=500):
     results_phys = []
 
     for i in range(0, len(params_phys), 3):
         group = params_phys[i:i+3]
-        fig, axs = plt.subplots(1, 3, figsize=(18, 5), sharey=True)
-        if len(group) == 1:
-            axs = [axs]
-        elif len(group) == 2:
-            axs = axs[:2]
+        fig1, axs1 = plt.subplots(1, 3, figsize=(18, 5), sharey=True)
+        fig2, axs2 = plt.subplots(1, 3, figsize=(18, 4))
 
-        for ax, (G, M, y0, t_span, label) in zip(axs, group):
+        axs1 = axs1 if isinstance(axs1, np.ndarray) else [axs1]
+        axs2 = axs2 if isinstance(axs2, np.ndarray) else [axs2]
+
+        for idx, (ax_r, ax_err, (G, M, y0, t_span, label)) in enumerate(zip(axs1, axs2, group)):
             k = G * M
             h = compute_h(*y0)
             e = compute_e(*y0, G, M)
@@ -58,179 +57,53 @@ def plot_theta_and_error_by_group(params_phys, num_points=500):
 
             x_num = sol.y[0]
             y_num = sol.y[2]
-            r_numeric = np.sqrt(x_num ** 2 + y_num ** 2)
+            r_numeric = np.sqrt(x_num**2 + y_num**2)
             theta_numeric = np.arctan2(y_num, x_num)
+
             sort_idx = np.argsort(theta_numeric)
             theta_sorted = theta_numeric[sort_idx]
             r_sorted_numeric = r_numeric[sort_idx]
 
-            # === rozwiązanie dokładne z sympy ===
+            # Dokładne rozwiązanie analityczne
             r_exact_expr = symbolic_r_theta(h, G, M, e)
             r_exact_func = sp.lambdify(sp.symbols('theta'), r_exact_expr, modules=['numpy'])
-            r_interp_exact = r_exact_func(theta_sorted)
+            r_sorted_exact = r_exact_func(theta_sorted)
 
-            abs_error = np.abs(r_sorted_numeric - r_interp_exact)
-            sq_error = (r_sorted_numeric - r_interp_exact) ** 2
+            # Oblicz błędy
+            abs_error = np.abs(r_sorted_numeric - r_sorted_exact)
+            sq_error = (r_sorted_numeric - r_sorted_exact)**2
             mae = np.mean(abs_error)
             mse = np.mean(sq_error)
             results_phys.append((label, mae, mse))
 
-            ax.plot(theta_sorted, r_sorted_numeric, color='black', label='Numeryczne')
-            ax.plot(theta_sorted, r_interp_exact, 'r--', label='Dokładne (SymPy)')
-            ax.set_title(label, fontsize=10)
-            ax.set_xlabel("θ [rad]")
-            ax.grid(True)
-            if ax == axs[0]:
-                ax.set_ylabel("r")
+            # === WYKRES: r(θ) ===
+            ax_r.plot(theta_sorted, r_sorted_numeric, label="Numeryczne", color='black')
+            ax_r.plot(theta_sorted, r_sorted_exact, 'r--', label="Dokładne (SymPy)")
+            ax_r.set_title(label)
+            ax_r.set_xlabel("θ [rad]")
+            ax_r.grid(True)
+            if idx == 0:
+                ax_r.set_ylabel("r [m]")
 
-            # === Błąd r(t) względem sympy ===
-            theta_unsorted = theta_numeric
-            r_exact_t = r_exact_func(theta_unsorted)
-            error_rt = np.abs(r_numeric - r_exact_t)
-            plt.figure()
-            plt.plot(sol.t, error_rt)
-            plt.title(f"Błąd r(t) względem rozwiązania z SymPy – {label}")
-            plt.xlabel("t")
-            plt.ylabel("|r_num - r_sympy|")
-            plt.grid(True)
-            plt.show()
+            # === WYKRES: Błąd bezwzględny ===
+            ax_err.plot(theta_sorted, abs_error, label="Błąd bezwzględny")
+            ax_err.set_title(f"Błąd r(θ) – {label}")
+            ax_err.set_xlabel("θ [rad]")
+            if idx == 0:
+                ax_err.set_ylabel("Błąd [m]")
+            ax_err.grid(True)
 
-        handles, labels = axs[0].get_legend_handles_labels()
-        fig.legend(handles, labels, loc='upper center', ncol=2)
-        fig.suptitle("Porównanie trajektorii r(θ) – rozwiązanie numeryczne vs SymPy", fontsize=14)
+        handles, labels = axs1[0].get_legend_handles_labels()
+        fig1.legend(handles, labels, loc='upper center', ncol=2)
+        fig1.suptitle("Porównanie r(θ): Numeryczne vs Dokładne", fontsize=14)
+        fig2.suptitle("Błąd bezwzględny r(θ)", fontsize=14)
         plt.tight_layout(rect=[0, 0, 1, 0.94])
         plt.show()
 
     return results_phys
 
 
-
-
-
-# === Wykresy r(θ) i błędów, po 3 przypadki na raz ===
-def plot_theta_and_error_by_group(params_phys, num_points=500):
-    results_phys = []
-
-    for i in range(0, len(params_phys), 3):
-        group = params_phys[i:i+3]
-        fig, axs = plt.subplots(1, 3, figsize=(18, 5), sharey=True)
-        if len(group) == 1:
-            axs = [axs]
-        elif len(group) == 2:
-            axs = axs[:2]
-
-        for ax, (G, M, y0, t_span, label) in zip(axs, group):
-            k = G * M
-            h = compute_h(*y0)
-            e = compute_e(*y0, G, M)
-            p = h ** 2 / k
-
-            t_eval = np.linspace(*t_span, num_points)
-            sol = solve_ivp(orbital_rhs, t_span, y0, args=(k,), t_eval=t_eval, rtol=1e-9)
-
-            x_num = sol.y[0]
-            y_num = sol.y[2]
-            r_numeric = np.sqrt(x_num ** 2 + y_num ** 2)
-            theta_numeric = np.arctan2(y_num, x_num)
-            sort_idx = np.argsort(theta_numeric)
-            theta_sorted = theta_numeric[sort_idx]
-            r_sorted_numeric = r_numeric[sort_idx]
-
-            r_interp_exact = p / (1 + e * np.cos(theta_sorted))
-
-            abs_error = np.abs(r_sorted_numeric - r_interp_exact)
-            sq_error = (r_sorted_numeric - r_interp_exact) ** 2
-            mae = np.mean(abs_error)
-            mse = np.mean(sq_error)
-            results_phys.append((label, mae, mse))
-
-            ax.plot(theta_sorted, r_sorted_numeric, color='black', label='Numeryczne')
-            ax.plot(theta_sorted, r_interp_exact, 'r--', label='Dokładne')
-            ax.set_title(label, fontsize=10)
-            ax.set_xlabel("θ [rad]")
-            ax.grid(True)
-            if ax == axs[0]:
-                ax.set_ylabel("r")
-
-            # DODATKOWY wykres błędu r(t)
-            r_exact_t = p / (1 + e * np.cos(theta_numeric))
-            error_rt = np.abs(r_numeric - r_exact_t)
-            plt.figure()
-            plt.plot(sol.t, error_rt)
-            plt.title(f"Błąd r(t) – {label}")
-            plt.xlabel("t")
-            plt.ylabel("|r_num - r_exact|")
-            plt.grid(True)
-            plt.show()
-
-        handles, labels = axs[0].get_legend_handles_labels()
-        fig.legend(handles, labels, loc='upper center', ncol=2)
-        fig.suptitle("Porównanie trajektorii r(θ)", fontsize=14)
-        plt.tight_layout(rect=[0, 0, 1, 0.94])
-        plt.show()
-
-    return results_phys
-
-
-
-# === Wykresy r(θ) po 3 na figurę ===
-def plot_theta_trajectories_by_group(params_phys, num_points=500):
-    results_phys = []
-
-    for i in range(0, len(params_phys), 3):
-        group = params_phys[i:i+3]
-        fig, axs = plt.subplots(1, 3, figsize=(18, 5), sharey=True)
-        if len(group) == 1:
-            axs = [axs]
-        elif len(group) == 2:
-            axs = axs[:2]
-
-        for ax, (G, M, y0, t_span, label) in zip(axs, group):
-            k = G * M
-            h = compute_h(*y0)
-            e = compute_e(*y0, G, M)
-            p = h ** 2 / k
-
-            t_eval = np.linspace(*t_span, num_points)
-            sol = solve_ivp(orbital_rhs, t_span, y0, args=(k,), t_eval=t_eval, rtol=1e-9)
-
-            x_num = sol.y[0]
-            y_num = sol.y[2]
-            r_numeric = np.sqrt(x_num ** 2 + y_num ** 2)
-            theta_numeric = np.arctan2(y_num, x_num)
-            sort_idx = np.argsort(theta_numeric)
-            theta_sorted = theta_numeric[sort_idx]
-            r_sorted_numeric = r_numeric[sort_idx]
-
-            # === r_exact(θ) symbolicznie z sympy ===
-            r_exact_expr = symbolic_r_theta(h, G, M, e)
-            r_exact_func = sp.lambdify(sp.symbols('theta'), r_exact_expr, modules=['numpy'])
-            r_interp_exact = r_exact_func(theta_sorted)
-
-            abs_error = np.abs(r_sorted_numeric - r_interp_exact)
-            sq_error = (r_sorted_numeric - r_interp_exact) ** 2
-            mae = np.mean(abs_error)
-            mse = np.mean(sq_error)
-            results_phys.append((label, mae, mse))
-
-            ax.plot(theta_sorted, r_sorted_numeric, color='black', label='Numeryczne')
-            ax.plot(theta_sorted, r_interp_exact, 'r--', label='Dokładne')
-            ax.set_title(label, fontsize=10)
-            ax.set_xlabel("θ [rad]")
-            ax.grid(True)
-            if ax == axs[0]:
-                ax.set_ylabel("r")
-
-
-        handles, labels = axs[0].get_legend_handles_labels()
-        fig.legend(handles, labels, loc='upper center', ncol=2)
-        #fig.suptitle("Porównanie trajektorii r(θ)", fontsize=14)
-        plt.tight_layout(rect=[0, 0, 1, 0.94])
-        plt.show()
-
-    return results_phys
-
-# === Wykresy 3D po 3 na figurę ===
+# === 3D wykresy trajektorii po 3 przypadki ===
 def plot_3d_trajectories_by_group(params_phys, num_points=500):
     for i in range(0, len(params_phys), 3):
         group = params_phys[i:i+3]
@@ -257,7 +130,7 @@ def plot_3d_trajectories_by_group(params_phys, num_points=500):
         plt.tight_layout(rect=[0, 0, 1, 0.95])
         plt.show()
 
-# === Parametry fizyczne ===
+# === Zestaw przypadków fizycznych ===
 params_phys = [
     (6.67430e-11, 1.989e30, [1.496e11, 0, 0, 29780], (0, 3.154e7), "Ziemia – fizyczne dane"),
     (6.67430e-11, 1.989e30, [4.6e10, 0, 0, 58980], (0, 7.6e6), "Merkury – fizyczne dane"),
@@ -267,13 +140,11 @@ params_phys = [
     (6.67430e-11, 5 * 1.989e30, [1.496e11, 0, 0, 29780], (0, 1.5e7), "Masa Słońca ×5 – silniejsze pole"),
 ]
 
-# === Uruchomienie analizy i wizualizacji ===
+# === Uruchomienie wszystkiego ===
 results_phys = plot_theta_trajectories_by_group(params_phys)
 df_phys = pd.DataFrame(results_phys, columns=["Opis", "MAE", "MSE"])
 print("\nPorównanie wyników dla różnych zestawów fizycznych parametrów:")
 print(df_phys)
 
 plot_3d_trajectories_by_group(params_phys)
-
-
 
